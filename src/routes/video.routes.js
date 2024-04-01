@@ -23,7 +23,7 @@ router
                 maxCount: 1,
             },
             {
-                name: "thumbnail",
+                name: "thumbNail",
                 maxCount: 1,
             },
             
@@ -35,7 +35,7 @@ router
     .route("/:videoId")
     .get(getVideoById)
     .delete(deleteVideo)
-    .patch(upload.single("thumbnail"), updateVideo);
+    .patch(upload.single("thumbNail"), updateVideo);
 
 router.route("/toggle/publish/:videoId").patch(togglePublishStatus);
 

@@ -11,113 +11,123 @@ import {
 import fs from "fs";
 
 const publishAVideo = asyncHandler(async (req, res) => {
-  const { title, description } = req.body
-  const videoFile = req.files?.videoFile[0]?.path
-  if (!videoFile) throw new ApiError(400, "Please Select Video File")
-  const thumbNail = req.files?.thumbNail[0]?.path
-  if (!thumbNail) throw new ApiError(400, "Please select thumbnail for your video")
+  const { title, description } = req.body;
+  const videoFile = req.files?.videoFile[0]?.path;
+  if (!videoFile) throw new ApiError(400, "Please Select Video File");
+  const thumbNail = req.files?.thumbNail[0]?.path;
+  if (!thumbNail)
+    throw new ApiError(400, "Please select thumbnail for your video");
 
   // Video upload and Duration
-  const uploadVideoToCloudinary = await uploadFileCloudinary(videoFile)
+  const uploadVideoToCloudinary = await uploadOnCloudinary(videoFile);
 
-  if (!uploadFileCloudinary) throw new ApiError(500, "Not able to upload your video please try again after some time")
+  if (!uploadVideoToCloudinary)
+    throw new ApiError(
+      500,
+      "Not able to upload your video please try again after some time"
+    );
 
   // uploadVideoToCloudinary.url------
-  const videoDuration = uploadVideoToCloudinary.duration
-  const totalMinutes = Math.floor(videoDuration / 60)
-  const remainingSecs = Math.round(videoDuration % 60)
-  const durationString = `${totalMinutes}:${remainingSecs < 10 ? '0' : ''}${remainingSecs}`
-  const [minutes, seconds] = durationString.split(":")
-  const duration = parseInt(minutes) * 60 + parseInt(seconds)
+  const videoDuration = uploadVideoToCloudinary.duration;
+  const totalMinutes = Math.floor(videoDuration / 60);
+  const remainingSecs = Math.round(videoDuration % 60);
+  const durationString = `${totalMinutes}:${remainingSecs < 10 ? "0" : ""}${remainingSecs}`;
+  const [minutes, seconds] = durationString.split(":");
+  const duration = parseInt(minutes) * 60 + parseInt(seconds);
   // convert this duration into minutes and secs or hours if needed
 
   // upload thumbnail
-  const thumbNailUploadUrl = await uploadFileCloudinary(thumbNail)
-  if (!thumbNailUploadUrl) throw new ApiError(500, "Not able to upload thumbnail please try after sometime")
+  const thumbNailUploadUrl = await uploadOnCloudinary(thumbNail);
+  if (!thumbNailUploadUrl)
+    throw new ApiError(
+      500,
+      "Not able to upload thumbnail please try after sometime"
+    );
   const owner = req.user?._id;
-  const video = await Video.create(
-      {
-          videoFile: uploadVideoToCloudinary.url,
-          thumbNail: thumbNailUploadUrl.url,
-          owner,
-          title,
-          description,
-          duration,
-      }
-  )
-  const videoFileData = await Video.findOne(video._id).select("-isPublished")
+  const video = await Video.create({
+    videoFile: uploadVideoToCloudinary.url,
+    thumbNail: thumbNailUploadUrl.url,
+    owner,
+    title,
+    description,
+    duration,
+  });
+  const videoFileData = await Video.findOne(video._id).select("-isPublished");
 
-  if (!videoFileData) throw new ApiError(500, "Error uploading your video try after some time")
+  if (!videoFileData)
+    throw new ApiError(500, "Error uploading your video try after some time");
 
-  // Remove Temp file 
-  fs.unlinkSync(videoFile)
-  fs.unlinkSync(thumbNail)
+  // Remove Temp file
+//   fs.unlinkSync(videoFile);
+//   fs.unlinkSync(thumbNail);
 
   return res
-      .status(200)
-      .json(
-          new ApiResponse(200, videoFileData, "Your video is uploaded successfully")
-      )
-})
+    .status(200)
+    .json(
+      new ApiResponse(200, videoFileData, "Your video is uploaded successfully")
+    );
+});
 
 const getAllVideos = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, query, sortBy, sortType, userId } = req.query
+  const { page = 1, limit = 10, query, sortBy, sortType, userId } = req.query;
   try {
-      await User.findById(new mongoose.Types.ObjectId(userId))
-      const sortMethod = sortType === 'desc' ? -1 : 1
-      let pipeline = []
-      if (query) {
-          pipeline.push({
-              $match: {
-                  $or: [
-                      {
-                          title: {
-                              $regex: query,
-                              $options: "i",
-                          },
-                      },
-                      {
-                          description: {
-                              $regex: query,
-                              $options: "i",
-                          },
-                      },
-                  ],
+    await User.findById(new mongoose.Types.ObjectId(userId));
+    const sortMethod = sortType === "desc" ? -1 : 1;
+    let pipeline = [];
+    if (query) {
+      pipeline.push({
+        $match: {
+          $or: [
+            {
+              title: {
+                $regex: query,
+                $options: "i",
               },
-          })
-      }
+            },
+            {
+              description: {
+                $regex: query,
+                $options: "i",
+              },
+            },
+          ],
+        },
+      });
+    }
+    pipeline.push({
+      $match: {
+        isPublished: true,
+      },
+    });
+    pipeline.push({
+      $skip: (page - 1) * parseInt(limit),
+    });
+    pipeline.push({
+      $limit: parseInt(limit),
+    });
+    if (sortBy) {
       pipeline.push({
-          $match: {
-              isPublished: true
-          }
-      })
-      pipeline.push({
-          $skip: (page - 1) * parseInt(limit)
-      })
-      pipeline.push({
-          $limit: parseInt(limit)
-      })
-      if (sortBy) {
-          pipeline.push({
-              $sort: {
-                  [sortBy]: sortMethod
-              }
-          })
-      }
-      console.log(pipeline);
-      const data = await Video.aggregate(pipeline)
-      console.log(data);
-      return res
-          .status(200)
-          .json(
-              new ApiResponse(200, { data }, "Videos Fetched")
-          )
+        $sort: {
+          [sortBy]: sortMethod,
+        },
+      });
+    }
+    console.log(pipeline);
+    const data = await Video.aggregate(pipeline);
+    console.log(data);
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { data }, "Videos Fetched"));
   } catch (error) {
-      return res
-          .status(error.statusCode || 500)
-          .json(
-              new ApiResponse(error.statusCode || 500, null, error.message || "Error fetching videos try after sometime")
-          )
+    return res
+      .status(error.statusCode || 500)
+      .json(
+        new ApiResponse(
+          error.statusCode || 500,
+          null,
+          error.message || "Error fetching videos try after sometime"
+        )
+      );
   }
 });
 
@@ -149,7 +159,7 @@ const updateVideo = asyncHandler(async (req, res) => {
   const newThumbNail = req.file?.path;
   if (!newThumbNail) throw new ApiError(404, "No image found to upload");
 
-  const newThumbNailUpload = await uploadFileCloudinary(newThumbNail);
+  const newThumbNailUpload = await uploadOnCloudinary(newThumbNail);
   const video = await Video.findByIdAndUpdate(videoId, {
     $set: {
       thumbNail: newThumbNailUpload?.url,
@@ -158,7 +168,7 @@ const updateVideo = asyncHandler(async (req, res) => {
     },
   });
   await removeFileFromCloudinary(video?.thumbNail);
-  fs.unlinkSync(newThumbNail);
+//   fs.unlinkSync(newThumbNail);
   return res.status(200).json(new ApiResponse(200, {}, "Thumbnail updated"));
 });
 
@@ -179,21 +189,21 @@ const deleteVideo = asyncHandler(async (req, res) => {
 
 const togglePublishStatus = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
-  if (!videoId) throw new ApiError(404, "No video found")
+  if (!videoId) throw new ApiError(404, "No video found");
 
   try {
-    const video = await Video.findById(videoId)
-    video.isPublished = !video.isPublished
-    await video.save()
+    const video = await Video.findById(videoId);
+    video.isPublished = !video.isPublished;
+    await video.save();
     return res
-        .status(200)
-        .json(
-            new ApiResponse(200, {}, "Video status changed")
-        )
-} catch (error) {
-    throw new ApiError(500, "Error while changing video status try after some time")
-}
-
+      .status(200)
+      .json(new ApiResponse(200, {}, "Video status changed"));
+  } catch (error) {
+    throw new ApiError(
+      500,
+      "Error while changing video status try after some time"
+    );
+  }
 });
 
 export {
